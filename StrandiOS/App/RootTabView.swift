@@ -46,13 +46,19 @@ struct RootTabView: View {
     @AppStorage(MoreSectionPrefs.storageKey) private var expandedMoreSectionsCSV = MoreSectionPrefs.defaultCSV
     private var expandedMoreSections: Set<String> { MoreSectionPrefs.decode(expandedMoreSectionsCSV) }
 
-    /// V8 liquid redesign is the default Today; the Settings toggle lets a user fall back to the classic
-    /// Today if they prefer it (keyed identically to the SettingsView toggle). Default ON.
-    @AppStorage("noop.liquidTodayEnabled") private var liquidTodayEnabled = true
+    @AppStorage(TodayShellStyle.storageKey) private var todayShellRaw = TodayShellStyle.ledger.rawValue
+    @AppStorage(TodayShellStyle.legacyLiquidKey) private var liquidTodayEnabled = false
 
-    /// The Today tab root, honouring the liquid/classic preference.
+    private var todayShell: TodayShellStyle {
+        TodayShellStyle.resolve(raw: todayShellRaw, legacyLiquidEnabled: liquidTodayEnabled)
+    }
+
+    /// The Today tab root, honouring the shell preference (Classic / Liquid / Ledger).
     @ViewBuilder private var todayTabRoot: some View {
-        if liquidTodayEnabled { LiquidTodayView() } else { TodayView() }
+        switch todayShell {
+        case .liquid: LiquidTodayView()
+        case .classic, .ledger: TodayView()
+        }
     }
 
     /// Native tab selection binding. SwiftUI sends taps on the already-selected item through the

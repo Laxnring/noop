@@ -32,6 +32,7 @@ public struct FrostedCardSurface: View {
     // "Card transparency" setting (reactive): fades the whole glass surface toward the background. 100 =
     // solid (default). Reading it here makes every card update live when the Settings slider moves.
     @AppStorage(CardAppearancePrefs.opacityKey) private var cardOpacityPercent = CardAppearancePrefs.defaultPercent
+    @Environment(\.todayShellStyle) private var todayShell
 
     public init(tint: Color? = nil, cornerRadius: CGFloat = 22, washStrength: Double = 1.0) {
         self.tint = tint
@@ -40,13 +41,17 @@ public struct FrostedCardSurface: View {
     }
 
     public var body: some View {
-        let op = max(0.0, min(1.0, Double(cardOpacityPercent) / 100.0))
-        NoopPanelSurface(
-            tint: tint?.opacity(washStrength),
-            cornerRadius: cornerRadius,
-            elevated: false,
-            surfaceOpacity: op
-        )
+        if todayShell == .ledger {
+            LedgerFlatSurface(cornerRadius: LedgerMetrics.cornerRadius)
+        } else {
+            let op = max(0.0, min(1.0, Double(cardOpacityPercent) / 100.0))
+            NoopPanelSurface(
+                tint: tint?.opacity(washStrength),
+                cornerRadius: cornerRadius,
+                elevated: false,
+                surfaceOpacity: op
+            )
+        }
     }
 }
 

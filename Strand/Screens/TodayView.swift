@@ -205,7 +205,8 @@ struct TodayView: View {
     // Day-cycle scene backdrop (#698). Default ON. When the user turns it off in Settings → Appearance,
     // Today drops the SceneScreenBackground and falls back to the plain dark surfaceBase canvas. The
     // cards already sit on an opaque canvas, so readability is unchanged either way.
-    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = true
+    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = false
+    @AppStorage(VisualDelightPrefs.enabledKey) private var visualDelight = false
     // Effort display scale (#268), drives the Effort tile's value + caption. Display-only.
     @AppStorage(UnitPrefs.effortScaleKey) private var effortScaleRaw = EffortScale.hundred.rawValue
     private var effortScale: EffortScale { UnitPrefs.resolveEffortScale(effortScaleRaw) }
@@ -333,6 +334,14 @@ struct TodayView: View {
     @State private var hrZoomDomain: ClosedRange<Date>?
     /// Reduce Motion gates the Today HR reset animation (the pinch/pan frames are never animated).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.todayShellStyle) private var todayShell
+
+    /// Day-cycle sky on Classic Today only when Visual delight is on (Ledger stays flat; Liquid has its own sky).
+    private var effectiveDayCycleBackground: Bool {
+        guard showDayCycleBackground, todayShell != .ledger else { return false }
+        if todayShell == .liquid { return false }
+        return visualDelight
+    }
 
     // #829 follow-up: the HR chart's frame in the day-swipe coordinate space (see HRChartFrameKey). The
     // day-swipe gesture skips any drag that STARTS inside it, giving the chart's pinch/pan/double-tap
@@ -1109,7 +1118,9 @@ struct TodayView: View {
                 // they can change the day by swiping across or tapping here. fixedSize makes it claim its own
                 // width so a tight top bar never compresses it, and the trailing icon cluster keeps its room.
                 Text(dayNavHint ?? dayNavDateText)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .font(todayShell == .ledger
+                          ? .system(size: 15, weight: .semibold, design: .serif)
+                          : .system(size: 13, weight: .semibold, design: .rounded))
                     .foregroundStyle(dayNavHint != nil ? StrandPalette.accent : StrandPalette.textPrimary)
                     .lineLimit(1)
                     .fixedSize()
@@ -1273,7 +1284,7 @@ struct TodayView: View {
                        // second offscreen pass DOUBLED its cost and re-rasterised it on every TodayView
                        // body re-eval (the masked image is itself one offscreen pass). That was a v7.0.2
                        // lag regression; removing the flatten restores native layer caching.
-                       topBackground: showDayCycleBackground
+                       topBackground: effectiveDayCycleBackground
                            ? AnyView(SceneScreenBackground(hour: demoSceneHour)) : nil) {
             VStack(alignment: .leading, spacing: NoopMetrics.sectionGap) {
                 #if os(iOS)
@@ -2780,42 +2791,105 @@ struct TodayView: View {
 
     @ViewBuilder
     private func scoreHeroRow(d: DailyMetric?, score: Double?) -> some View {
-        // #762: size the three rings off the row's MEASURED width (read via a background preference reader,
-        // not a height-clamped GeometryReader), then let the HStack SELF-SIZE its height. The old layout
-        // wrapped the row in `GeometryReader { … }.frame(height: 150)`; that hard 150pt height clipped the
-        // column once a Charge/Rest ring also rendered its provenance badge (ring + label + the two-line
-        // SourceBadge/ScoreStatePill block exceeds 150), so the Rest badge overlapped the content beneath
-        // (the reported overlap/clipping). With a self-sizing HStack the row grows to fit its tallest column
-        // and never clips. Until the first layout measures width, fall back to a sensible phone width so the
-        // rings render at a reasonable size on the very first frame rather than collapsing.
-        let measured = heroRingRowWidth > 1 ? heroRingRowWidth : 345
-        // Design Reset: three EQUAL clean rings (no glow, faint track) in Charge / Effort / Rest order with
-        // generous spacing, mirroring the flat mockup. Sized off width so they stay equal on any phone.
-        let ring = Self.heroRingDiameter(rowWidth: measured)
-        HStack(alignment: .top, spacing: 22) {
-            // Component 4: Charge/Rest badge their real per-day merge winner; Effort has no badge.
-            // A1 (#514/#706): the Charge ring is TAPPABLE (a small chevron cue overlays the ring's bottom
-            // edge, INSIDE the ring frame so it adds no stacked height, keeping the #762 self-sizing row
-            // untouched). It opens the Charge breakdown sheet (the existing ChargeBreakdownSection), built
-            // lazily on tap. No new badge/dot/tier sits under the ring (that would re-load the #762 stack).
-            heroRingColumn(section: .charge, domain: .charge, provenanceKey: "recovery",
-                           onRingTap: { showChargeBreakdown = true }) {
-                chargeRing(score: score, d: d, diameter: ring)
+        if todayShell == .ledger {
+            ledgerScoreBoard(d: d, score: score)
+        } else {
+            // #762: size the three rings off the row's MEASURED width (read via a background preference reader,
+            // not a height-clamped GeometryReader), then let the HStack SELF-SIZE its height. The old layout
+            // wrapped the row in `GeometryReader { … }.frame(height: 150)`; that hard 150pt height clipped the
+            // column once a Charge/Rest ring also rendered its provenance badge (ring + label + the two-line
+            // SourceBadge/ScoreStatePill block exceeds 150), so the Rest badge overlapped the content beneath
+            // (the reported overlap/clipping). With a self-sizing HStack the row grows to fit its tallest column
+            // and never clips. Until the first layout measures width, fall back to a sensible phone width so the
+            // rings render at a reasonable size on the very first frame rather than collapsing.
+            let measured = heroRingRowWidth > 1 ? heroRingRowWidth : 345
+            // Design Reset: three EQUAL clean rings (no glow, faint track) in Charge / Effort / Rest order with
+            // generous spacing, mirroring the flat mockup. Sized off width so they stay equal on any phone.
+            let ring = Self.heroRingDiameter(rowWidth: measured)
+            HStack(alignment: .top, spacing: 22) {
+                // Component 4: Charge/Rest badge their real per-day merge winner; Effort has no badge.
+                // A1 (#514/#706): the Charge ring is TAPPABLE (a small chevron cue overlays the ring's bottom
+                // edge, INSIDE the ring frame so it adds no stacked height, keeping the #762 self-sizing row
+                // untouched). It opens the Charge breakdown sheet (the existing ChargeBreakdownSection), built
+                // lazily on tap. No new badge/dot/tier sits under the ring (that would re-load the #762 stack).
+                heroRingColumn(section: .charge, domain: .charge, provenanceKey: "recovery",
+                               onRingTap: { showChargeBreakdown = true }) {
+                    chargeRing(score: score, d: d, diameter: ring)
+                }
+                heroRingColumn(section: .effort, domain: .effort) { effortRing(d: d, diameter: ring) }
+                heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
             }
-            heroRingColumn(section: .effort, domain: .effort) { effortRing(d: d, diameter: ring) }
-            heroRingColumn(section: .rest, domain: .rest, provenanceKey: "sleep_performance") { restRing(diameter: ring) }
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        // Zero-impact width reader: a clear background that publishes the row's width up via preference. It
-        // adds no visual and no intrinsic size, so the HStack's own (self-sizing) height is what lays out.
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: HeroRingRowWidthKey.self, value: geo.size.width)
+            .frame(maxWidth: .infinity, alignment: .center)
+            // Zero-impact width reader: a clear background that publishes the row's width up via preference. It
+            // adds no visual and no intrinsic size, so the HStack's own (self-sizing) height is what lays out.
+            .background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: HeroRingRowWidthKey.self, value: geo.size.width)
+                }
+            )
+            .onPreferenceChange(HeroRingRowWidthKey.self) { w in
+                if w > 1 && abs(w - heroRingRowWidth) > 0.5 { heroRingRowWidth = w }
             }
-        )
-        .onPreferenceChange(HeroRingRowWidthKey.self) { w in
-            if w > 1 && abs(w - heroRingRowWidth) > 0.5 { heroRingRowWidth = w }
         }
+    }
+
+    /// Ledger shell: typographic score strip instead of three rings (same data paths as the rings).
+    private func ledgerScoreBoard(d: DailyMetric?, score: Double?) -> some View {
+        let chargeValue: String = {
+            if let s = score { return "\(Int(s.rounded()))" }
+            if recoveryCalibration == nil, let carried = lastScoredCharge {
+                return "\(Int(carried.value.rounded()))"
+            }
+            return "—"
+        }()
+        let chargeDetail: String? = {
+            if score != nil { return Self.readinessWord(readiness.level) }
+            if let carried = lastScoredCharge, score == nil { return carried.caption }
+            if let key = chargeScoreState.detail { return String(localized: key) }
+            return nil
+        }()
+
+        let effortValue: String = {
+            guard let gv = effortGaugeValue(d) else { return "—" }
+            return effortScale == .whoop ? String(format: "%.1f", gv) : "\(Int(gv.rounded()))"
+        }()
+        let effortDetail: String? = effortZeroNote
+
+        let restValue: String = restScore.map { "\(Int($0.rounded()))" } ?? "—"
+        let restDetail: String? = {
+            if restScore != nil { return nil }
+            if displayDay?.recovery != nil {
+                return String(localized: "Needs a tracked night")
+            }
+            return nil
+        }()
+
+        return LedgerDayScoresBoard(cells: [
+            LedgerScoreCell(
+                id: "charge",
+                title: "Charge",
+                value: chargeValue,
+                detail: chargeDetail,
+                accent: StrandPalette.chargeColor,
+                onTap: { showChargeBreakdown = true }
+            ),
+            LedgerScoreCell(
+                id: "effort",
+                title: "Effort",
+                value: effortValue,
+                detail: effortDetail,
+                accent: StrandPalette.effortColor,
+                onTap: { guideSection = .effort }
+            ),
+            LedgerScoreCell(
+                id: "rest",
+                title: "Rest",
+                value: restValue,
+                detail: restDetail,
+                accent: StrandPalette.restColor,
+                onTap: { guideSection = .rest }
+            ),
+        ])
     }
 
     /// The localized natural-case display word for a score domain (Charge / Effort / Rest / Stress). The

@@ -187,10 +187,10 @@ struct SettingsView: View {
     @AppStorage(AccentColor.customHexKey) private var accentCustomHex = AccentColor.defaultCustomHex
     // Day-cycle scene backdrop behind Today (#698). Default ON. Off swaps the scene for a plain dark
     // canvas. TodayView reads the same key to gate its SceneScreenBackground.
-    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = true
-    // "Sky behind cards" (default ON): extend the day-cycle sky behind the whole Today scroll so
-    // Card transparency reveals it under every card. User-toggleable below. Mirrors Kotlin NoopPrefs.skyBehindCards.
-    @AppStorage(SkyBehindCardsPrefs.enabledKey) private var skyBehindCards = true
+    @AppStorage(SceneBackgroundPrefs.enabledKey) private var showDayCycleBackground = false
+    @AppStorage(VisualDelightPrefs.enabledKey) private var visualDelight = false
+    // "Sky behind cards" (opt-in): extend the day-cycle sky behind the whole Today scroll.
+    @AppStorage(SkyBehindCardsPrefs.enabledKey) private var skyBehindCards = SkyBehindCardsPrefs.defaultEnabled
     // Card-surface opacity percent (100 = solid). Reactive — moving the slider live-updates every card.
     @AppStorage(CardAppearancePrefs.opacityKey) private var cardOpacityPercent = CardAppearancePrefs.defaultPercent
     // "Reduce motion in NOOP" (default OFF): pose every looping animation still and stop the decorative
@@ -1193,16 +1193,30 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 rowDivider
-                // MARK: Day-cycle background — the time-of-day scene behind Today (#698). On by default.
-                // Off swaps it for the plain dark canvas for people who find the moving scene distracting.
-                Toggle(isOn: $showDayCycleBackground) {
-                    Text("Day-cycle background")
+                Toggle(isOn: $visualDelight) {
+                    Text("Visual delight")
                         .font(StrandFont.subhead)
                         .foregroundStyle(StrandPalette.textPrimary)
                 }
                 .toggleStyle(.switch)
                 .tint(StrandPalette.accent)
-                Text("Shows a soft sunrise, day, dusk and night scene behind the Today screen. Turn it off for a plain dark canvas. Your cards stay exactly as readable.")
+                Text("Optional atmosphere: day-cycle sky on Classic Today and the older motion-heavy chrome. Ledger stays flat either way; Liquid Today keeps its own sky.")
+                    .font(StrandFont.caption)
+                    .foregroundStyle(StrandPalette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                rowDivider
+                // MARK: Day-cycle background — the time-of-day scene behind Classic Today (#698).
+                Toggle(isOn: $showDayCycleBackground) {
+                    Text("Day-cycle background")
+                        .font(StrandFont.subhead)
+                        .foregroundStyle(visualDelight ? StrandPalette.textPrimary : StrandPalette.textTertiary)
+                }
+                .toggleStyle(.switch)
+                .tint(StrandPalette.accent)
+                .disabled(!visualDelight)
+                Text("Shows a soft sunrise, day, dusk and night scene behind Classic Today. Needs Visual delight on.")
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1733,24 +1747,33 @@ struct SettingsView: View {
         rawSensorDiagnosticsCard
     }
 
-    /// Opt-in liquid Today redesign (default ON in this build). Off falls back to the
-    /// classic dashboard immediately, no rebuild. Same data either way.
-    @AppStorage("noop.liquidTodayEnabled") private var liquidTodayEnabled = true
+    @AppStorage(TodayShellStyle.storageKey) private var todayShellRaw = TodayShellStyle.ledger.rawValue
+    @AppStorage(TodayShellStyle.legacyLiquidKey) private var liquidTodayEnabled = false
+
+    private var todayShellSelection: Binding<TodayShellStyle> {
+        Binding(
+            get: { TodayShellStyle.resolve(raw: todayShellRaw, legacyLiquidEnabled: liquidTodayEnabled) },
+            set: { choice in
+                todayShellRaw = choice.rawValue
+                liquidTodayEnabled = choice.usesLiquidToday
+            }
+        )
+    }
+
     private var liquidTodayCard: some View {
         SettingsSection(
-            icon: "drop.fill",
-            title: "Experimental · Liquid Today",
-            blurb: "A redesigned Today screen in the new liquid language: the scores as living liquid, a time-of-day sky, and a calmer layout. Same numbers, new look."
+            icon: "square.grid.3x3.fill",
+            title: "Experimental · Today layout",
+            blurb: "Three distinct home shells — same strap data, different visual language. Pick the one that feels like yours, not a template."
         ) {
             VStack(alignment: .leading, spacing: NoopMetrics.rowSpacing) {
-                Toggle(isOn: $liquidTodayEnabled) {
-                    Text("Liquid Today (prototype)")
-                        .font(StrandFont.subhead)
-                        .foregroundStyle(StrandPalette.textPrimary)
+                Picker("Today layout", selection: todayShellSelection) {
+                    ForEach(TodayShellStyle.allCases) { style in
+                        Text(style.label).tag(style)
+                    }
                 }
-                .toggleStyle(.switch)
-                .tint(StrandPalette.accent)
-                Text("Replaces the Today tab with the prototype redesign. Turn it off any time to return to the classic dashboard. Reads the same live data from your strap.")
+                .pickerStyle(.segmented)
+                Text(todayShellSelection.wrappedValue.blurb)
                     .font(StrandFont.caption)
                     .foregroundStyle(StrandPalette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -110,6 +110,7 @@ public struct NoopCard<Content: View>: View {
     private let padding: CGFloat
     private let tint: Color?
     @ViewBuilder private let content: () -> Content
+    @Environment(\.todayShellStyle) private var todayShell
     #if os(macOS)
     @State private var hover = false
     #endif
@@ -134,15 +135,16 @@ public struct NoopCard<Content: View>: View {
     // count on every card, which multiplies across long scrolling lists. macOS adds the
     // hover emphasis border on top (with the #104 animation scoping) unchanged.
     @ViewBuilder private var cardSurface: some View {
-        let shape = RoundedRectangle(cornerRadius: NoopMetrics.cardRadius, style: .continuous)
+        let radius = todayShell == .ledger ? LedgerMetrics.cornerRadius : NoopMetrics.cardRadius
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         #if os(macOS)
-        FrostedCardSurface(tint: tint, cornerRadius: NoopMetrics.cardRadius)
+        FrostedCardSurface(tint: tint, cornerRadius: radius)
             .overlay(
                 shape.strokeBorder(StrandPalette.hairlineStrong, lineWidth: 1).opacity(hover ? 1 : 0)
             )
             .animation(.easeOut(duration: 0.16), value: hover)
         #else
-        FrostedCardSurface(tint: tint, cornerRadius: NoopMetrics.cardRadius)
+        FrostedCardSurface(tint: tint, cornerRadius: radius)
         #endif
     }
 }
@@ -154,11 +156,25 @@ public struct SectionHeader: View {
     public init(_ title: LocalizedStringKey, overline: LocalizedStringKey? = nil, trailing: String? = nil) {
         self.title = title; self.overline = overline; self.trailing = trailing
     }
+    @Environment(\.todayShellStyle) private var todayShell
+
     public var body: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                if let overline { Text(overline).strandOverline() }
-                Text(title).font(StrandFont.title2).foregroundStyle(StrandPalette.textPrimary)
+            VStack(alignment: .leading, spacing: todayShell == .ledger ? 4 : 2) {
+                if let overline {
+                    if todayShell == .ledger {
+                        Text(overline)
+                            .font(LedgerFont.kicker)
+                            .foregroundStyle(StrandPalette.textTertiary)
+                            .textCase(.uppercase)
+                            .tracking(1.2)
+                    } else {
+                        Text(overline).strandOverline()
+                    }
+                }
+                Text(title)
+                    .font(todayShell == .ledger ? LedgerFont.masthead : StrandFont.title2)
+                    .foregroundStyle(StrandPalette.textPrimary)
             }
             Spacer()
             if let trailing {

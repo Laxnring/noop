@@ -275,15 +275,21 @@ public enum AppearanceMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// The day-cycle scene backdrop behind the Today screen (sunrise / day / dusk / night). Default ON —
-/// the scene is the v7 atmosphere. Some people find it distracting and want a plain dark canvas (#698),
+/// The day-cycle scene backdrop behind Classic Today (sunrise / day / dusk / night). Default OFF with
+/// Ledger-first builds; pair with [VisualDelightPrefs]. Some people find it distracting (#698),
 /// so this gates whether Today passes a `SceneScreenBackground` into its scaffold. When OFF, Today drops
 /// the scene and falls back to the opaque `surfaceBase`; the cards already sit on an opaque canvas, so
 /// they stay perfectly readable. Read in `TodayView` via `@AppStorage(SceneBackgroundPrefs.enabledKey)`
 /// and toggled from Settings → Appearance. Mirror in Kotlin via `NoopPrefs.showDayCycleBackground`.
 public enum SceneBackgroundPrefs {
-    /// The @AppStorage key shared by TodayView and the Settings toggle. Default value is `true`.
+    /// The @AppStorage key shared by TodayView and the Settings toggle. Default value is `false`.
     public static let enabledKey = "noop.showDayCycleBackground"
+}
+
+/// Master gate for decorative atmosphere (day-cycle sky on Classic Today, liquid motion flourishes).
+/// Default OFF — Ledger is the calm default; turn this on when you want the older “delight” layer.
+public enum VisualDelightPrefs {
+    public static let enabledKey = "noop.visualDelight"
 }
 
 /// Card-surface opacity as a PERCENT (0 = fully see-through, 100 = solid; default 100). `FrostedCardSurface`
@@ -301,6 +307,8 @@ public enum CardAppearancePrefs {
 /// Kotlin via `NoopPrefs.skyBehindCards`.
 public enum SkyBehindCardsPrefs {
     public static let enabledKey = "noop.skyBehindCards"
+    /// Default OFF — sky behind the scroll is opt-in even when the day-cycle scene is on.
+    public static let defaultEnabled = false
 }
 
 /// Custom background image (#custom-background): a user-picked photo drawn full-bleed behind every screen,
@@ -343,6 +351,73 @@ public enum BackgroundFillMode: String, CaseIterable, Identifiable, Sendable {
 
     /// Tolerant parse — an unknown/legacy rawValue falls back to `.fill` (the default).
     public static func resolve(_ raw: String) -> BackgroundFillMode { BackgroundFillMode(rawValue: raw) ?? .fill }
+}
+
+// MARK: - Today shell (Classic / Liquid / Ledger)
+
+/// Which Today experience the app uses. Classic and Ledger both use `TodayView`; Liquid uses
+/// `LiquidTodayView`. Ledger additionally swaps card chrome and the hero to the flat editorial
+/// treatment (`LedgerStyle`). Stored under `storageKey`; legacy installs fall back from
+/// `legacyLiquidKey` until the user picks explicitly in Settings.
+public enum TodayShellStyle: String, CaseIterable, Identifiable, Sendable {
+    case classic
+    case liquid
+    case ledger
+
+    public var id: String { rawValue }
+
+    public static let storageKey = "noop.todayShell"
+    public static let legacyLiquidKey = "noop.liquidTodayEnabled"
+
+    public var label: String {
+        switch self {
+        case .classic: return String(localized: "Classic", bundle: .module)
+        case .liquid:  return String(localized: "Liquid", bundle: .module)
+        case .ledger:  return String(localized: "Ledger", bundle: .module)
+        }
+    }
+
+    public var blurb: String {
+        switch self {
+        case .classic:
+            return String(localized: "The original dashboard: three rings, frosted cards, day-cycle sky.", bundle: .module)
+        case .liquid:
+            return String(localized: "Living liquid scores, time-of-day sky, calmer motion.", bundle: .module)
+        case .ledger:
+            return String(localized: "Editorial layout: flat panels, serif type, monospaced scores — no glass stack.", bundle: .module)
+        }
+    }
+
+    /// Resolve persisted choice, migrating from the older liquid on/off toggle when `storageKey` is empty.
+    /// Fresh installs default to **Ledger**; the only legacy escape hatch is `legacyLiquidEnabled == false` → Classic.
+    public static func resolve(raw: String, legacyLiquidEnabled: Bool) -> TodayShellStyle {
+        if !raw.isEmpty, let style = TodayShellStyle(rawValue: raw) { return style }
+        if !legacyLiquidEnabled { return .classic }
+        return .ledger
+    }
+
+    public var usesLiquidToday: Bool { self == .liquid }
+    public var usesLedgerChrome: Bool { self == .ledger }
+}
+
+private struct TodayShellStyleKey: EnvironmentKey {
+    static let defaultValue: TodayShellStyle = .ledger
+}
+
+public extension EnvironmentValues {
+    var todayShellStyle: TodayShellStyle {
+        get { self[TodayShellStyleKey.self] }
+        set { self[TodayShellStyleKey.self] = newValue }
+    }
+}
+
+public extension View {
+    /// Apply the Today shell preference at the app root (mirrors `.chartStyle`).
+    func todayShellStyle(_ raw: String, legacyLiquidEnabled: Bool) -> some View {
+        let style = TodayShellStyle.resolve(raw: raw, legacyLiquidEnabled: legacyLiquidEnabled)
+        return environment(\.todayShellStyle, style)
+            .id("noop.todayShell.\(style.rawValue)")
+    }
 }
 
 // MARK: - Light-idiom helpers
