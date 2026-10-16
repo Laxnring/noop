@@ -9,6 +9,12 @@ name: Testing build (fork)
 
 on:
   workflow_dispatch:
+  # The fork's default branch predates this workflow, so it cannot be dispatched
+  # from GitHub's Actions UI yet. Let the dedicated SideStore deployment branch
+  # start this one testing build without touching main.
+  push:
+    branches:
+      - codex/sidestore-build
 
 permissions:
   contents: write
